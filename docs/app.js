@@ -36,6 +36,7 @@ function mostrarApp(mostrar) {
     cargarListas();
     cargarResumen();
     cargarPendientes();
+    cargarPorAgendar();
   }
 }
 
@@ -98,6 +99,7 @@ document.getElementById('guardar-cita').addEventListener('click', async () => {
   cargarCitasParaSelect();
   cargarListas();
   cargarResumen();
+  cargarPorAgendar();
 });
 
 document.querySelectorAll('.agregar-item').forEach((btn) => {
@@ -302,13 +304,7 @@ async function cargarPendientes() {
 function plantillaPendiente(item) {
   const orden = item.egresos ? `Orden ${item.egresos.numero_orden}` : '';
   const camposTipo = item.tipo === 'cita'
-    ? `
-      <label>Fecha</label>
-      <input type="date" class="p-fecha" />
-      <label>Hora</label>
-      <input type="time" class="p-hora" />
-      <label>Lugar</label>
-      <input type="text" class="p-lugar" placeholder="Ej. Clínica del Norte" />`
+    ? '<p style="font-size:12px; color:var(--text-secondary); margin:8px 0 0;">Al guardar queda en "Por agendar" en la pestaña Citas — ahí le pones fecha, hora y lugar cuando llames a pedirla.</p>'
     : `
       <label>Fecha de vencimiento de la autorización</label>
       <input type="date" class="p-vencimiento" />
@@ -338,15 +334,10 @@ async function autorizarItem(id, tipo, cardEl) {
   if (!numeroAutorizacion) return alert('Falta el número de autorización.');
 
   if (tipo === 'cita') {
-    const fecha = cardEl.querySelector('.p-fecha').value || null;
-    const hora = cardEl.querySelector('.p-hora').value || null;
-    const lugar = cardEl.querySelector('.p-lugar').value.trim() || null;
-    if (!fecha) return alert('Falta la fecha de la cita.');
-
     const nombre = cardEl.querySelector('.pending-item-name').textContent;
     const { data: nuevaCita, error: errCita } = await supabase
       .from('citas')
-      .insert({ nombre, fecha, hora, lugar, estado: 'programada' })
+      .insert({ nombre, estado: 'pendiente_agendar' })
       .select()
       .single();
     if (errCita) return alert(errCita.message);
@@ -377,4 +368,73 @@ async function autorizarItem(id, tipo, cardEl) {
   cargarResumen();
   cargarCitasParaSelect();
   cargarListas();
+  cargarPorAgendar();
+}
+
+async function cargarPorAgendar() {
+  const { data, error } = await supabase
+    .from('citas')
+    .select('id, nombre')
+    .eq('estado', 'pendiente_agendar')
+    .order('created_at', { ascending: true });
+  if (error) return;
+  const citas = data || [];
+
+  const contenedor = document.getElementById('lista-por-agendar');
+  contenedor.innerHTML = citas.length
+    ? citas.map((c) => plantillaPorAgendar(c)).join('')
+    : '<div class="card"><p style="font-size:14px; color:var(--text-secondary); margin:0;">No hay citas por agendar.</p></div>';
+
+  contenedor.querySelectorAll('.pending-item-row').forEach((row) => {
+    row.addEventListener('click', () => {
+      row.closest('.pending-item').querySelector('.pending-form').classList.toggle('hidden');
+    });
+  });
+
+  contenedor.querySelectorAll('.agendar-btn').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await agendarCita(btn.dataset.id, btn.closest('.pending-item'));
+    });
+  });
+}
+
+function plantillaPorAgendar(cita) {
+  return `
+    <div class="pending-item" data-id="${cita.id}">
+      <div class="pending-item-row">
+        <div>
+          <p class="pending-item-name">${cita.nombre}</p>
+          <p class="pending-item-meta">Falta llamar a pedir la fecha</p>
+        </div>
+        <span class="badge">Por agendar</span>
+      </div>
+      <div class="pending-form hidden">
+        <label>Fecha</label>
+        <input type="date" class="p-fecha" />
+        <label>Hora</label>
+        <input type="time" class="p-hora" />
+        <label>Lugar</label>
+        <input type="text" class="p-lugar" placeholder="Ej. Clínica del Norte" />
+        <button type="button" class="btn-primary agendar-btn" data-id="${cita.id}">Guardar fecha</button>
+      </div>
+    </div>`;
+}
+
+async function agendarCita(id, cardEl) {
+  const fecha = cardEl.querySelector('.p-fecha').value || null;
+  const hora = cardEl.querySelector('.p-hora').value || null;
+  const lugar = cardEl.querySelector('.p-lugar').value.trim() || null;
+  if (!fecha) return alert('Falta la fecha de la cita.');
+
+  const { error } = await supabase
+    .from('citas')
+    .update({ fecha, hora, lugar, estado: 'programada' })
+    .eq('id', id);
+  if (error) return alert(error.message);
+
+  cargarPorAgendar();
+  cargarListas();
+  cargarResumen();
+  cargarCitasParaSelect();
 }
