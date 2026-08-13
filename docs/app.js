@@ -8,12 +8,31 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const loginView = document.getElementById('login-view');
 const appView = document.getElementById('app-view');
 
+function hoyStr() {
+  return new Date().toLocaleDateString('en-CA');
+}
+
+function diasHasta(fechaStr) {
+  const hoy = new Date(`${hoyStr()}T00:00:00`);
+  const objetivo = new Date(`${fechaStr}T00:00:00`);
+  return Math.round((objetivo - hoy) / 86400000);
+}
+
+function etiquetaVencimiento(fechaStr) {
+  const dias = diasHasta(fechaStr);
+  if (dias < 0) return 'Vencido';
+  if (dias === 0) return 'Vence hoy';
+  if (dias === 1) return 'Vence mañana';
+  return `Vence en ${dias} días`;
+}
+
 function mostrarApp(mostrar) {
   loginView.classList.toggle('hidden', mostrar);
   appView.classList.toggle('hidden', !mostrar);
   if (mostrar) {
     cargarCitasParaSelect();
     cargarListas();
+    cargarResumen();
   }
 }
 
@@ -32,6 +51,19 @@ document.getElementById('logout').addEventListener('click', async () => {
   await supabase.auth.signOut();
   mostrarApp(false);
 });
+
+document.querySelectorAll('.nav-item').forEach((item) => {
+  item.addEventListener('click', () => cambiarVista(item.dataset.view));
+});
+
+function cambiarVista(vista) {
+  document.querySelectorAll('.nav-item').forEach((item) => {
+    item.classList.toggle('active', item.dataset.view === vista);
+  });
+  ['hoy', 'citas', 'egresos'].forEach((v) => {
+    document.getElementById(`view-${v}`).classList.toggle('hidden', v !== vista);
+  });
+}
 
 document.getElementById('guardar-cita').addEventListener('click', async () => {
   const nombre = document.getElementById('cita-nombre').value.trim();
@@ -54,6 +86,7 @@ document.getElementById('guardar-cita').addEventListener('click', async () => {
   document.getElementById('cita-descripcion').value = '';
   cargarCitasParaSelect();
   cargarListas();
+  cargarResumen();
 });
 
 document.querySelectorAll('.agregar-item').forEach((btn) => {
@@ -120,6 +153,7 @@ document.getElementById('guardar-egreso').addEventListener('click', async () => 
     document.getElementById(`items-${tipo}`).innerHTML = '';
   });
   cargarListas();
+  cargarResumen();
 });
 
 async function cargarListas() {
@@ -131,8 +165,8 @@ async function cargarListas() {
     .order('fecha', { ascending: true })
     .limit(20);
   document.getElementById('lista-citas').innerHTML = (citas || [])
-    .map((c) => `<li>${c.nombre} — ${c.fecha}${c.hora ? ' ' + c.hora : ''}${c.lugar ? ' · ' + c.lugar : ''}</li>`)
-    .join('') || '<li>No hay citas próximas.</li>';
+    .map((c) => `<li class="list-row">${c.nombre} — ${c.fecha}${c.hora ? ' ' + c.hora : ''}${c.lugar ? ' · ' + c.lugar : ''}</li>`)
+    .join('') || '<li class="list-row">No hay citas próximas.</li>';
 
   const { data: egresos } = await supabase
     .from('egresos')
@@ -141,6 +175,74 @@ async function cargarListas() {
     .order('created_at', { ascending: true })
     .limit(20);
   document.getElementById('lista-egresos').innerHTML = (egresos || [])
-    .map((e) => `<li>Orden N.º ${e.numero_orden}</li>`)
-    .join('') || '<li>No hay egresos pendientes.</li>';
+    .map((e) => `<li class="list-row">Orden N.º ${e.numero_orden}</li>`)
+    .join('') || '<li class="list-row">No hay egresos pendientes.</li>';
+}
+
+async function cargarResumen() {
+  const hoy = hoyStr();
+
+  const { count: citasCount } = await supabase
+    .from('citas')
+    .select('id', { count: 'exact', head: true })
+    .eq('estado', 'programada')
+    .gte('fecha', hoy);
+  document.getElementById('m-citas').textContent = citasCount ?? 0;
+
+  const { count: examenesCount } = await supabase
+    .from('egreso_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('tipo', 'examen')
+    .eq('estado', 'pendiente');
+  document.getElementById('m-examenes').textContent = examenesCount ?? 0;
+
+  const { count: medicinasCount } = await supabase
+    .from('egreso_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('tipo', 'medicina')
+    .eq('estado', 'pendiente');
+  document.getElementById('m-medicinas').textContent = medicinasCount ?? 0;
+
+  const { data: citasHoy } = await supabase
+    .from('citas')
+    .select('nombre, hora, lugar')
+    .eq('estado', 'programada')
+    .eq('fecha', hoy);
+  document.getElementById('resumen-hoy').innerHTML = (citasHoy || []).length
+    ? citasHoy.map((c) => `
+        <div class="card card-accent">
+          <p style="font-weight:600; margin:0 0 2px;">${c.nombre}</p>
+          <p style="font-size:13px; color:var(--text-secondary); margin:0;">${c.hora ?? 'sin hora'}${c.lugar ? ' · ' + c.lugar : ''}</p>
+        </div>`).join('')
+    : '<div class="card"><p style="font-size:14px; color:var(--text-secondary); margin:0;">Nada programado para hoy.</p></div>';
+
+  const { data: porVencer } = await supabase
+    .from('egreso_items')
+    .select('nombre, fecha_vencimiento')
+    .eq('estado', 'pendiente')
+    .in('tipo', ['examen', 'medicina'])
+    .not('fecha_vencimiento', 'is', null)
+    .order('fecha_vencimiento', { ascending: true })
+    .limit(5);
+  document.getElementById('resumen-vencer').innerHTML = (porVencer || []).length
+    ? porVencer.map((i) => `
+        <li class="list-row">
+          <span>${i.nombre}</span>
+          <span class="badge badge-warning">${etiquetaVencimiento(i.fecha_vencimiento)}</span>
+        </li>`).join('')
+    : '<li class="list-row">Nada por vencer.</li>';
+
+  const { data: egresosPendientes } = await supabase
+    .from('egresos')
+    .select('numero_orden')
+    .eq('estado', 'pendiente_autorizacion')
+    .order('created_at', { ascending: true })
+    .limit(5);
+  document.getElementById('resumen-egresos').innerHTML = (egresosPendientes || []).length
+    ? egresosPendientes.map((e) => `
+        <li class="list-row">
+          <span>Orden ${e.numero_orden}</span>
+          <span class="badge">Pendiente</span>
+        </li>`).join('')
+    : '<li class="list-row">Nada pendiente.</li>';
 }

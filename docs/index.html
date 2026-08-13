@@ -4,66 +4,127 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>NotiMed</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.33.0/dist/tabler-icons.min.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <h1>NotiMed</h1>
 
   <section id="login-view">
+    <h1 style="font-size:18px; margin-bottom:16px;">NotiMed</h1>
     <label for="email">Correo</label>
     <input id="email" type="email" autocomplete="username" />
     <label for="password">Contraseña</label>
     <input id="password" type="password" autocomplete="current-password" />
-    <button id="login-btn" class="primary">Entrar</button>
+    <button id="login-btn" class="btn-primary">Entrar</button>
     <p id="login-error" style="color:#b00020; font-size:13px;"></p>
   </section>
 
-  <section id="app-view" class="hidden">
-    <button id="logout">Salir</button>
+  <div id="app-view" class="app-shell hidden">
+    <nav class="app-nav" id="app-nav">
+      <div class="brand"><span class="dot"></span>NotiMed</div>
+      <div class="nav-item active" data-view="hoy"><i class="ti ti-home" aria-hidden="true"></i><span>Hoy</span></div>
+      <div class="nav-item" data-view="citas"><i class="ti ti-calendar-event" aria-hidden="true"></i><span>Citas</span></div>
+      <div class="nav-item" data-view="egresos"><i class="ti ti-clipboard-list" aria-hidden="true"></i><span>Egresos</span></div>
+    </nav>
 
-    <h2>Nueva cita</h2>
-    <div class="card">
-      <label for="cita-nombre">Nombre</label>
-      <input id="cita-nombre" placeholder="Ej. Cita hematología" />
-      <label for="cita-fecha">Fecha</label>
-      <input id="cita-fecha" type="date" />
-      <label for="cita-hora">Hora</label>
-      <input id="cita-hora" type="time" />
-      <label for="cita-lugar">Lugar</label>
-      <input id="cita-lugar" placeholder="Ej. Clínica del Norte" />
-      <label for="cita-descripcion">Notas (opcional)</label>
-      <input id="cita-descripcion" />
-      <button id="guardar-cita" class="primary">Guardar cita</button>
-    </div>
+    <main class="app-main">
+      <div class="app-header">
+        <h1 style="font-size:18px;">Resumen</h1>
+        <i class="ti ti-logout" id="logout" aria-hidden="true" title="Salir"></i>
+      </div>
 
-    <h2>Nuevo egreso</h2>
-    <div class="card">
-      <label for="egreso-cita">Cita que lo generó</label>
-      <select id="egreso-cita"></select>
-      <label for="egreso-orden">Número de orden</label>
-      <input id="egreso-orden" placeholder="Ej. 4587231" />
+      <section id="view-hoy">
+        <div class="metrics">
+          <div class="metric-card">
+            <i class="ti ti-calendar-event" aria-hidden="true"></i>
+            <p class="metric-label">Citas próximas</p>
+            <p class="metric-value" id="m-citas">0</p>
+          </div>
+          <div class="metric-card">
+            <i class="ti ti-flask" aria-hidden="true"></i>
+            <p class="metric-label">Exámenes pendientes</p>
+            <p class="metric-value" id="m-examenes">0</p>
+          </div>
+          <div class="metric-card span-2">
+            <div>
+              <p class="metric-label">Medicinas por reclamar</p>
+              <p class="metric-value" id="m-medicinas">0</p>
+            </div>
+            <i class="ti ti-pill" aria-hidden="true"></i>
+          </div>
+        </div>
 
-      <h3>Citas</h3>
-      <div id="items-cita"></div>
-      <button type="button" data-tipo="cita" class="agregar-item">+ Agregar cita</button>
+        <div class="two-col">
+          <div>
+            <p class="section-title">Hoy</p>
+            <div id="resumen-hoy"></div>
 
-      <h3>Exámenes de laboratorio</h3>
-      <div id="items-examen"></div>
-      <button type="button" data-tipo="examen" class="agregar-item">+ Agregar examen</button>
+            <p class="section-title">Por vencer pronto</p>
+            <div class="card" style="padding:2px 16px;">
+              <ul class="list" id="resumen-vencer"></ul>
+            </div>
+          </div>
+          <div>
+            <p class="section-title">Autorizaciones EPS pendientes</p>
+            <div class="card" style="padding:2px 16px;">
+              <ul class="list" id="resumen-egresos"></ul>
+            </div>
+          </div>
+        </div>
+      </section>
 
-      <h3>Medicinas a reclamar</h3>
-      <div id="items-medicina"></div>
-      <button type="button" data-tipo="medicina" class="agregar-item">+ Agregar medicina</button>
+      <section id="view-citas" class="hidden">
+        <p class="section-title">Nueva cita</p>
+        <div class="card">
+          <label for="cita-nombre">Nombre</label>
+          <input id="cita-nombre" placeholder="Ej. Cita hematología" />
+          <label for="cita-fecha">Fecha</label>
+          <input id="cita-fecha" type="date" />
+          <label for="cita-hora">Hora</label>
+          <input id="cita-hora" type="time" />
+          <label for="cita-lugar">Lugar</label>
+          <input id="cita-lugar" placeholder="Ej. Clínica del Norte" />
+          <label for="cita-descripcion">Notas (opcional)</label>
+          <input id="cita-descripcion" />
+          <button id="guardar-cita" class="btn-primary">Guardar cita</button>
+        </div>
+        <p class="section-title">Próximas citas</p>
+        <div class="card" style="padding:2px 16px;">
+          <ul class="list" id="lista-citas"></ul>
+        </div>
+      </section>
 
-      <button id="guardar-egreso" class="primary">Guardar egreso</button>
-    </div>
+      <section id="view-egresos" class="hidden">
+        <p class="section-title">Nuevo egreso</p>
+        <div class="card">
+          <label for="egreso-cita">Cita que lo generó</label>
+          <select id="egreso-cita"></select>
+          <label for="egreso-orden">Número de orden</label>
+          <input id="egreso-orden" placeholder="Ej. 4587231" />
 
-    <h2>Próximas citas</h2>
-    <ul id="lista-citas"></ul>
+          <p class="section-title">Citas</p>
+          <div id="items-cita"></div>
+          <button type="button" data-tipo="cita" class="agregar-item">+ Agregar cita</button>
 
-    <h2>Egresos pendientes de autorizar</h2>
-    <ul id="lista-egresos"></ul>
-  </section>
+          <p class="section-title">Exámenes de laboratorio</p>
+          <div id="items-examen"></div>
+          <button type="button" data-tipo="examen" class="agregar-item">+ Agregar examen</button>
+
+          <p class="section-title">Medicinas a reclamar</p>
+          <div id="items-medicina"></div>
+          <button type="button" data-tipo="medicina" class="agregar-item">+ Agregar medicina</button>
+
+          <button id="guardar-egreso" class="btn-primary">Guardar egreso</button>
+        </div>
+        <p class="section-title">Egresos pendientes de autorizar</p>
+        <div class="card" style="padding:2px 16px;">
+          <ul class="list" id="lista-egresos"></ul>
+        </div>
+      </section>
+    </main>
+  </div>
 
   <script type="module" src="app.js"></script>
 </body>
