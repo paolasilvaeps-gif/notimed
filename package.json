@@ -1,0 +1,14 @@
+{
+  "name": "notimed",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Recordatorios de citas, exámenes y medicinas por correo",
+  "scripts": {
+    "recordatorios": "node scripts/enviar-recordatorios.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "resend": "^4.0.1"
+  }
+}
