@@ -8,6 +8,8 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const loginView = document.getElementById('login-view');
 const appView = document.getElementById('app-view');
 
+const ETIQUETAS_TIPO = { cita: 'Cita', examen: 'Examen', medicina: 'Medicina' };
+
 function hoyStr() {
   return new Date().toLocaleDateString('en-CA');
 }
@@ -33,6 +35,7 @@ function mostrarApp(mostrar) {
     cargarCitasParaSelect();
     cargarListas();
     cargarResumen();
+    cargarPendientes();
   }
 }
 
@@ -52,6 +55,14 @@ document.getElementById('logout').addEventListener('click', async () => {
   mostrarApp(false);
 });
 
+document.getElementById('toggle-password').addEventListener('click', () => {
+  const input = document.getElementById('password');
+  const icon = document.querySelector('#toggle-password i');
+  const mostrar = input.type === 'password';
+  input.type = mostrar ? 'text' : 'password';
+  icon.className = mostrar ? 'ti ti-eye-off' : 'ti ti-eye';
+});
+
 document.querySelectorAll('.nav-item').forEach((item) => {
   item.addEventListener('click', () => cambiarVista(item.dataset.view));
 });
@@ -60,7 +71,7 @@ function cambiarVista(vista) {
   document.querySelectorAll('.nav-item').forEach((item) => {
     item.classList.toggle('active', item.dataset.view === vista);
   });
-  ['hoy', 'citas', 'egresos'].forEach((v) => {
+  ['hoy', 'citas', 'egresos', 'pendientes'].forEach((v) => {
     document.getElementById(`view-${v}`).classList.toggle('hidden', v !== vista);
   });
 }
@@ -111,16 +122,21 @@ function agregarFilaItem(tipo) {
 }
 
 async function cargarCitasParaSelect() {
+  const { data: usadas } = await supabase.from('egresos').select('cita_origen_id');
+  const idsUsados = new Set((usadas || []).map((e) => e.cita_origen_id));
+
   const { data, error } = await supabase
     .from('citas')
     .select('id, nombre, fecha')
     .order('created_at', { ascending: false })
-    .limit(30);
+    .limit(50);
   if (error) return;
+
+  const disponibles = (data || []).filter((c) => !idsUsados.has(c.id));
   const select = document.getElementById('egreso-cita');
-  select.innerHTML = data
-    .map((c) => `<option value="${c.id}">${c.nombre}${c.fecha ? ' — ' + c.fecha : ''}</option>`)
-    .join('');
+  select.innerHTML = disponibles.length
+    ? disponibles.map((c) => `<option value="${c.id}">${c.nombre}${c.fecha ? ' — ' + c.fecha : ''}</option>`).join('')
+    : '<option value="">No hay citas disponibles</option>';
 }
 
 document.getElementById('guardar-egreso').addEventListener('click', async () => {
@@ -152,8 +168,10 @@ document.getElementById('guardar-egreso').addEventListener('click', async () => 
   ['cita', 'examen', 'medicina'].forEach((tipo) => {
     document.getElementById(`items-${tipo}`).innerHTML = '';
   });
+  cargarCitasParaSelect();
   cargarListas();
   cargarResumen();
+  cargarPendientes();
 });
 
 async function cargarListas() {
@@ -171,12 +189,11 @@ async function cargarListas() {
   const { data: egresos } = await supabase
     .from('egresos')
     .select('numero_orden, created_at')
-    .eq('estado', 'pendiente_autorizacion')
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(20);
   document.getElementById('lista-egresos').innerHTML = (egresos || [])
     .map((e) => `<li class="list-row">Orden N.º ${e.numero_orden}</li>`)
-    .join('') || '<li class="list-row">No hay egresos pendientes.</li>';
+    .join('') || '<li class="list-row">No hay egresos todavía.</li>';
 }
 
 async function cargarResumen() {
@@ -193,14 +210,14 @@ async function cargarResumen() {
     .from('egreso_items')
     .select('id', { count: 'exact', head: true })
     .eq('tipo', 'examen')
-    .eq('estado', 'pendiente');
+    .eq('estado', 'autorizado');
   document.getElementById('m-examenes').textContent = examenesCount ?? 0;
 
   const { count: medicinasCount } = await supabase
     .from('egreso_items')
     .select('id', { count: 'exact', head: true })
     .eq('tipo', 'medicina')
-    .eq('estado', 'pendiente');
+    .eq('estado', 'autorizado');
   document.getElementById('m-medicinas').textContent = medicinasCount ?? 0;
 
   const { data: citasHoy } = await supabase
@@ -218,8 +235,8 @@ async function cargarResumen() {
 
   const { data: porVencer } = await supabase
     .from('egreso_items')
-    .select('nombre, fecha_vencimiento')
-    .eq('estado', 'pendiente')
+    .select('nombre, fecha_vencimiento, documento_url')
+    .eq('estado', 'autorizado')
     .in('tipo', ['examen', 'medicina'])
     .not('fecha_vencimiento', 'is', null)
     .order('fecha_vencimiento', { ascending: true })
@@ -227,22 +244,137 @@ async function cargarResumen() {
   document.getElementById('resumen-vencer').innerHTML = (porVencer || []).length
     ? porVencer.map((i) => `
         <li class="list-row">
-          <span>${i.nombre}</span>
+          <span>${i.nombre}${i.documento_url ? ` · <a href="${i.documento_url}" target="_blank" rel="noopener noreferrer">Ir a documento</a>` : ''}</span>
           <span class="badge badge-warning">${etiquetaVencimiento(i.fecha_vencimiento)}</span>
         </li>`).join('')
     : '<li class="list-row">Nada por vencer.</li>';
 
-  const { data: egresosPendientes } = await supabase
-    .from('egresos')
-    .select('numero_orden')
+  const { data: pendientesPreview } = await supabase
+    .from('egreso_items')
+    .select('nombre, tipo')
     .eq('estado', 'pendiente_autorizacion')
     .order('created_at', { ascending: true })
     .limit(5);
-  document.getElementById('resumen-egresos').innerHTML = (egresosPendientes || []).length
-    ? egresosPendientes.map((e) => `
-        <li class="list-row">
-          <span>Orden ${e.numero_orden}</span>
-          <span class="badge">Pendiente</span>
+  document.getElementById('resumen-egresos').innerHTML = (pendientesPreview || []).length
+    ? pendientesPreview.map((i) => `
+        <li class="list-row" style="cursor:pointer;" data-ir-pendientes>
+          <span>${i.nombre}</span>
+          <span class="badge">${ETIQUETAS_TIPO[i.tipo]}</span>
         </li>`).join('')
     : '<li class="list-row">Nada pendiente.</li>';
+  document.querySelectorAll('[data-ir-pendientes]').forEach((row) => {
+    row.addEventListener('click', () => cambiarVista('pendientes'));
+  });
+}
+
+async function cargarPendientes() {
+  const { data, error } = await supabase
+    .from('egreso_items')
+    .select('id, tipo, nombre, egresos(numero_orden)')
+    .eq('estado', 'pendiente_autorizacion')
+    .order('created_at', { ascending: true });
+  if (error) return;
+  const pendientes = data || [];
+
+  const badge = document.getElementById('nav-badge-pendientes');
+  badge.textContent = pendientes.length;
+  badge.classList.toggle('hidden', pendientes.length === 0);
+
+  const contenedor = document.getElementById('lista-pendientes');
+  contenedor.innerHTML = pendientes.length
+    ? pendientes.map((item) => plantillaPendiente(item)).join('')
+    : '<div class="card"><p style="font-size:14px; color:var(--text-secondary); margin:0;">No hay nada pendiente de autorizar.</p></div>';
+
+  contenedor.querySelectorAll('.pending-item-row').forEach((row) => {
+    row.addEventListener('click', () => {
+      row.closest('.pending-item').querySelector('.pending-form').classList.toggle('hidden');
+    });
+  });
+
+  contenedor.querySelectorAll('.autorizar-btn').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await autorizarItem(btn.dataset.id, btn.dataset.tipo, btn.closest('.pending-item'));
+    });
+  });
+}
+
+function plantillaPendiente(item) {
+  const orden = item.egresos ? `Orden ${item.egresos.numero_orden}` : '';
+  const camposTipo = item.tipo === 'cita'
+    ? `
+      <label>Fecha</label>
+      <input type="date" class="p-fecha" />
+      <label>Hora</label>
+      <input type="time" class="p-hora" />
+      <label>Lugar</label>
+      <input type="text" class="p-lugar" placeholder="Ej. Clínica del Norte" />`
+    : `
+      <label>Fecha de vencimiento de la autorización</label>
+      <input type="date" class="p-vencimiento" />
+      <label>Link al documento (Google Drive, opcional)</label>
+      <input type="url" class="p-documento" placeholder="https://drive.google.com/..." />`;
+
+  return `
+    <div class="pending-item" data-id="${item.id}">
+      <div class="pending-item-row">
+        <div>
+          <p class="pending-item-name">${item.nombre}</p>
+          <p class="pending-item-meta">${ETIQUETAS_TIPO[item.tipo]}${orden ? ' · ' + orden : ''}</p>
+        </div>
+        <span class="badge">${ETIQUETAS_TIPO[item.tipo]}</span>
+      </div>
+      <div class="pending-form hidden">
+        <label>Número de autorización</label>
+        <input type="text" class="p-autorizacion" placeholder="Ej. A123456789" />
+        ${camposTipo}
+        <button type="button" class="btn-primary autorizar-btn" data-id="${item.id}" data-tipo="${item.tipo}">Guardar autorización</button>
+      </div>
+    </div>`;
+}
+
+async function autorizarItem(id, tipo, cardEl) {
+  const numeroAutorizacion = cardEl.querySelector('.p-autorizacion').value.trim();
+  if (!numeroAutorizacion) return alert('Falta el número de autorización.');
+
+  if (tipo === 'cita') {
+    const fecha = cardEl.querySelector('.p-fecha').value || null;
+    const hora = cardEl.querySelector('.p-hora').value || null;
+    const lugar = cardEl.querySelector('.p-lugar').value.trim() || null;
+    if (!fecha) return alert('Falta la fecha de la cita.');
+
+    const nombre = cardEl.querySelector('.pending-item-name').textContent;
+    const { data: nuevaCita, error: errCita } = await supabase
+      .from('citas')
+      .insert({ nombre, fecha, hora, lugar, estado: 'programada' })
+      .select()
+      .single();
+    if (errCita) return alert(errCita.message);
+
+    const { error } = await supabase
+      .from('egreso_items')
+      .update({ numero_autorizacion: numeroAutorizacion, estado: 'autorizado', cita_generada_id: nuevaCita.id })
+      .eq('id', id);
+    if (error) return alert(error.message);
+  } else {
+    const fechaVencimiento = cardEl.querySelector('.p-vencimiento').value || null;
+    const documentoUrl = cardEl.querySelector('.p-documento').value.trim() || null;
+    if (!fechaVencimiento) return alert('Falta la fecha de vencimiento.');
+
+    const { error } = await supabase
+      .from('egreso_items')
+      .update({
+        numero_autorizacion: numeroAutorizacion,
+        fecha_vencimiento: fechaVencimiento,
+        documento_url: documentoUrl,
+        estado: 'autorizado',
+      })
+      .eq('id', id);
+    if (error) return alert(error.message);
+  }
+
+  cargarPendientes();
+  cargarResumen();
+  cargarCitasParaSelect();
+  cargarListas();
 }

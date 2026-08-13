@@ -16,13 +16,11 @@ create table egresos (
   id uuid primary key default gen_random_uuid(),
   cita_origen_id uuid not null references citas(id),
   numero_orden text not null,
-  estado text not null default 'pendiente_autorizacion'
-    check (estado in ('pendiente_autorizacion','autorizado')),
-  fecha_autorizacion date,
-  ultimo_recordatorio date,
   created_at timestamptz not null default now()
 );
 
+-- La autorización de la EPS es por ítem, no por egreso completo: cada cita,
+-- examen o medicina se autoriza en su propio momento.
 create table egreso_items (
   id uuid primary key default gen_random_uuid(),
   egreso_id uuid not null references egresos(id),
@@ -30,16 +28,17 @@ create table egreso_items (
   nombre text not null,
   numero_autorizacion text,
   fecha_vencimiento date,
-  estado text not null default 'pendiente'
-    check (estado in ('pendiente','completado')),
+  documento_url text,
+  estado text not null default 'pendiente_autorizacion'
+    check (estado in ('pendiente_autorizacion','autorizado','completado')),
   cita_generada_id uuid references citas(id),
   ultimo_recordatorio date,
   created_at timestamptz not null default now()
 );
 
 create index idx_citas_fecha on citas(fecha) where estado = 'programada';
-create index idx_egresos_estado on egresos(estado);
-create index idx_items_vencimiento on egreso_items(fecha_vencimiento) where estado = 'pendiente';
+create index idx_items_vencimiento on egreso_items(fecha_vencimiento) where estado = 'autorizado';
+create index idx_items_pendientes on egreso_items(estado) where estado = 'pendiente_autorizacion';
 
 -- El anon key queda visible en el código del formulario web, así que sin RLS
 -- cualquiera que lo consiga podría leer las citas y medicinas. Estas políticas

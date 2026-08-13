@@ -77,19 +77,19 @@ async function main() {
     }
   }
 
-  let egresosPendientes = [];
+  let itemsPendientes = [];
   if (horaActual === 8) {
     const { data, error } = await supabase
-      .from('egresos')
-      .select('id, numero_orden, ultimo_recordatorio')
+      .from('egreso_items')
+      .select('id, nombre, tipo, ultimo_recordatorio')
       .eq('estado', 'pendiente_autorizacion')
       .or(`ultimo_recordatorio.is.null,ultimo_recordatorio.lte.${limiteRecordatorio}`);
     if (error) throw error;
-    egresosPendientes = data || [];
-    if (egresosPendientes.length) {
+    itemsPendientes = data || [];
+    if (itemsPendientes.length) {
       secciones.push({
-        titulo: 'Autorizaciones EPS pendientes',
-        items: egresosPendientes.map((e) => `Orden N.º ${e.numero_orden}`),
+        titulo: 'Por autorizar con la EPS',
+        items: itemsPendientes.map((i) => `${i.nombre} (${i.tipo})`),
       });
     }
   }
@@ -99,7 +99,7 @@ async function main() {
     const { data, error } = await supabase
       .from('egreso_items')
       .select('id, nombre, tipo, fecha_vencimiento, ultimo_recordatorio')
-      .eq('estado', 'pendiente')
+      .eq('estado', 'autorizado')
       .in('tipo', ['examen', 'medicina'])
       .not('fecha_vencimiento', 'is', null)
       .gte('fecha_vencimiento', hoy)
@@ -136,8 +136,8 @@ async function main() {
   if (citasManana.length) {
     await supabase.from('citas').update({ recordatorio_vispera_enviado: true }).in('id', citasManana.map((c) => c.id));
   }
-  if (egresosPendientes.length) {
-    await supabase.from('egresos').update({ ultimo_recordatorio: hoy }).in('id', egresosPendientes.map((e) => e.id));
+  if (itemsPendientes.length) {
+    await supabase.from('egreso_items').update({ ultimo_recordatorio: hoy }).in('id', itemsPendientes.map((i) => i.id));
   }
   if (itemsPorVencer.length) {
     await supabase.from('egreso_items').update({ ultimo_recordatorio: hoy }).in('id', itemsPorVencer.map((i) => i.id));
